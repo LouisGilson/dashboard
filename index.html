@@ -1026,13 +1026,19 @@ async function syncData(){
 }
 
 function setBinId(){
-  const choice=prompt('What would you like to set?\n1 — Gist ID (to link this device to existing data)\n2 — GitHub Token (to update your token)\n\nType 1 or 2:');
+  const current=getToken()?'Token: saved ✓':'Token: not set';
+  const gistId=localStorage.getItem(GIST_ID_KEY);
+  const gistStatus=gistId?'Gist ID: '+gistId.slice(0,8)+'…':'Gist ID: not set';
+  const choice=prompt('Sync settings ('+current+', '+gistStatus+')\n\n1 — Set / update GitHub Token\n2 — Set Gist ID (link to existing data)\n3 — Clear everything and start fresh\n\nType 1, 2 or 3:');
   if(choice==='1'){
-    const id=prompt('Paste your Gist ID:');
-    if(id&&id.trim()){localStorage.setItem(GIST_ID_KEY,id.trim());localStorage.removeItem('mdash_last_sync');alert('Gist ID saved! Now click ☁️ Sync to pull your data.');}
-  }else if(choice==='2'){
     const t=prompt('Paste your GitHub Personal Access Token (ghp_...):');
-    if(t&&t.trim()){localStorage.setItem(GIST_TOKEN_KEY,t.trim());alert('Token saved!');}
+    if(t&&t.trim()){localStorage.setItem(GIST_TOKEN_KEY,t.trim());alert('Token saved! Now click ☁️ Sync.');}
+  }else if(choice==='2'){
+    const id=prompt('Paste your Gist ID:');
+    if(id&&id.trim()){localStorage.setItem(GIST_ID_KEY,id.trim());localStorage.removeItem('mdash_last_sync');alert('Gist ID saved! Now click ☁️ Sync.');}
+  }else if(choice==='3'){
+    localStorage.removeItem(GIST_TOKEN_KEY);localStorage.removeItem(GIST_ID_KEY);localStorage.removeItem('mdash_last_sync');
+    alert('Cleared! Click ☁️ Sync to set up fresh — it will ask for your token.');
   }
 }
 
