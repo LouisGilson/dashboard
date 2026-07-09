@@ -934,126 +934,115 @@ function renderShop(){
   document.getElementById('shop-chip').textContent=tot>0?`${tot} to get`:'all clear';
 }
 
-// ── Cloud sync (JSONbin.io) ──
-const JSONBIN_MASTER_KEY = '$2a$10$b1f8JReVeMuwnQYt.wPEV.1klqdaLo3XEYKf0H9QFDNu815ISZbKu';
-const JSONBIN_ACCESS_KEY = '$2a$10$v3R6/2gslcJv6SLEmgXA/ey6weujf6bbMV9x0NQPL4bjJ9BjJI6Vm';
-const JSONBIN_BIN_KEY = 'mdash_bin_id';
-const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
+// ── Cloud sync (GitHub Gist) ──
+const GITHUB_TOKEN = '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';
+const GIST_ID_KEY  = 'mdash_gist_id';
+const GIST_FILE    = 'morning-dashboard-data.json';
+const GITHUB_API   = 'https://api.github.com';
 
 function getSyncBtn(){return document.getElementById('sync-btn');}
-function setSyncStatus(text, colour){
-  const btn=getSyncBtn();if(!btn)return;
-  btn.textContent=text;btn.style.borderColor=colour;btn.style.color=colour;
-}
-function resetSyncBtn(){
-  const btn=getSyncBtn();if(!btn)return;
-  btn.textContent='☁️ Sync';btn.style.borderColor='#3b82f6';btn.style.color='#60a5fa';
-}
+function setSyncStatus(text,colour){const btn=getSyncBtn();if(!btn)return;btn.textContent=text;btn.style.borderColor=colour;btn.style.color=colour;}
+function resetSyncBtn(){const btn=getSyncBtn();if(!btn)return;btn.textContent='☁️ Sync';btn.style.borderColor='#3b82f6';btn.style.color='#60a5fa';}
 
 function getPayload(){
-  return {
-    data: data,
-    debts: debts,
-    shop: shop,
-    completions: completions,
-    cats: (() => {const c={};for(const[k,v] of Object.entries(CATS))if(!v.builtin)c[k]=v;return c;})(),
-    syncedAt: new Date().toISOString()
+  return{
+    data:data,debts:debts,shop:shop,completions:completions,
+    cats:(()=>{const c={};for(const[k,v]of Object.entries(CATS))if(!v.builtin)c[k]=v;return c;})(),
+    syncedAt:new Date().toISOString()
   };
 }
-
 function applyPayload(p){
-  if(p.data)   { data=p.data;        saveData(); }
-  if(p.debts)  { debts=p.debts;      saveDebts(); }
-  if(p.shop)   { shop=p.shop;        saveShop(); }
-  if(p.completions){ completions=p.completions; saveCompletions(); }
-  if(p.cats)   { for(const[k,v] of Object.entries(p.cats)) CATS[k]=v; saveCats(); }
+  if(p.data)        {data=p.data;        saveData();}
+  if(p.debts)       {debts=p.debts;      saveDebts();}
+  if(p.shop)        {shop=p.shop;        saveShop();}
+  if(p.completions) {completions=p.completions; saveCompletions();}
+  if(p.cats)        {for(const[k,v]of Object.entries(p.cats))CATS[k]=v;saveCats();}
   initNextId();
   render('personal');render('work');updateStats();renderDebts();renderShop();populateCatSelects();renderLegend();
+}
+
+async function gistRequest(method,path,body){
+  const opts={method,headers:{'Authorization':'token '+GITHUB_TOKEN,'Content-Type':'application/json','Accept':'application/vnd.github.v3+json'}};
+  if(body)opts.body=JSON.stringify(body);
+  const res=await fetch(GITHUB_API+path,opts);
+  const text=await res.text();
+  console.log('Gist',method,path,res.status,text.slice(0,200));
+  if(!res.ok)throw new Error('GitHub '+method+' failed: '+res.status+' '+text);
+  return JSON.parse(text);
 }
 
 async function syncData(){
   const btn=getSyncBtn();btn.disabled=true;
   setSyncStatus('⏳ Syncing…','#f59e0b');
-  try {
-    let binId = localStorage.getItem(JSONBIN_BIN_KEY);
-    if(!binId){
-      // First time — create a new bin
-      setSyncStatus('⏳ Creating bin…','#f59e0b');
-      const res = await fetch(`${JSONBIN_BASE}/b`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_MASTER_KEY,'X-Access-Key':JSONBIN_ACCESS_KEY,'X-Bin-Name':'morning-dashboard','X-Bin-Private':'true'},
-        body: JSON.stringify(getPayload())
+  try{
+    let gistId=localStorage.getItem(GIST_ID_KEY);
+    if(!gistId){
+      setSyncStatus('⏳ Creating…','#f59e0b');
+      const res=await gistRequest('POST','/gists',{
+        description:'Morning Dashboard Data',
+        public:false,
+        files:{[GIST_FILE]:{content:JSON.stringify(getPayload(),null,2)}}
       });
-      const resText = await res.text();
-      console.log('Create response:', res.status, resText);
-      if(!res.ok) throw new Error('Create failed: '+res.status+' '+resText);
-      const json = JSON.parse(resText);
-      binId = json.metadata.id;
-      localStorage.setItem(JSONBIN_BIN_KEY, binId);
-      // Show the bin ID so user can copy it to other devices
-      console.log('Bin created! ID:', binId);
-      alert(`✓ Sync set up!\n\nYour bin ID is:\n${binId}\n\nCopy this and paste it on your other devices via the "Set Bin ID" button.`);
+      gistId=res.id;
+      localStorage.setItem(GIST_ID_KEY,gistId);
+      localStorage.setItem('mdash_last_sync',new Date().toISOString());
+      alert('✓ Sync ready!\n\nYour Gist ID is:\n'+gistId+'\n\nUse the 🔑 Set ID button on other devices and paste this in.');
       setSyncStatus('✓ Saved!','#34d399');
-    } else {
-      // Bin exists — fetch remote first, then decide which is newer
+    }else{
       setSyncStatus('⏳ Checking…','#f59e0b');
-      const getRes = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-        headers:{'X-Master-Key':JSONBIN_MASTER_KEY,'X-Access-Key':JSONBIN_ACCESS_KEY}
-      });
-      const getText = await getRes.text();
-      console.log('Fetch response:', getRes.status, getText.slice(0,200));
-      if(!getRes.ok) throw new Error('Fetch failed: '+getRes.status+' '+getText);
-      const remote = JSON.parse(getText).record;
-      const remoteTime = remote.syncedAt ? new Date(remote.syncedAt) : new Date(0);
-      const localTime  = new Date(localStorage.getItem('mdash_last_sync')||0);
-      console.log('Remote time:', remoteTime, 'Local time:', localTime);
-
-      if(remoteTime > localTime){
+      const res=await gistRequest('GET','/gists/'+gistId);
+      const remoteContent=res.files[GIST_FILE]&&res.files[GIST_FILE].content;
+      if(!remoteContent)throw new Error('Gist file not found');
+      const remote=JSON.parse(remoteContent);
+      const remoteTime=remote.syncedAt?new Date(remote.syncedAt):new Date(0);
+      const localTime=new Date(localStorage.getItem('mdash_last_sync')||0);
+      console.log('Remote:',remoteTime,'Local:',localTime);
+      if(remoteTime>localTime){
         applyPayload(remote);
-        localStorage.setItem('mdash_last_sync', remoteTime.toISOString());
+        localStorage.setItem('mdash_last_sync',remoteTime.toISOString());
         setSyncStatus('✓ Updated!','#34d399');
-      } else {
-        const putRes = await fetch(`${JSONBIN_BASE}/b/${binId}`, {
-          method:'PUT',
-          headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_MASTER_KEY,'X-Access-Key':JSONBIN_ACCESS_KEY},
-          body: JSON.stringify(getPayload())
+      }else{
+        await gistRequest('PATCH','/gists/'+gistId,{
+          files:{[GIST_FILE]:{content:JSON.stringify(getPayload(),null,2)}}
         });
-        const putText = await putRes.text();
-        console.log('Put response:', putRes.status, putText.slice(0,200));
-        if(!putRes.ok) throw new Error('Save failed: '+putRes.status+' '+putText);
-        localStorage.setItem('mdash_last_sync', new Date().toISOString());
+        localStorage.setItem('mdash_last_sync',new Date().toISOString());
         setSyncStatus('✓ Saved!','#34d399');
       }
     }
-  } catch(e) {
+  }catch(e){
     console.error('Sync error:',e);
     setSyncStatus('✗ Failed','#f87171');
   }
   btn.disabled=false;
-  setTimeout(resetSyncBtn, 2500);
+  setTimeout(resetSyncBtn,2500);
 }
 
 function setBinId(){
-  const id=prompt('Paste your JSONbin bin ID here:');
+  const id=prompt('Paste your Gist ID here:');
   if(id&&id.trim()){
-    localStorage.setItem(JSONBIN_BIN_KEY,id.trim());
+    localStorage.setItem(GIST_ID_KEY,id.trim());
     localStorage.removeItem('mdash_last_sync');
-    alert('Bin ID saved! Now click ☁️ Sync to pull your data.');
+    alert('Gist ID saved! Now click ☁️ Sync to pull your data.');
   }
 }
 
-// Auto-sync on load if a bin already exists
 async function autoSync(){
-  const binId=localStorage.getItem(JSONBIN_BIN_KEY);
-  if(!binId)return;
+  const gistId=localStorage.getItem(GIST_ID_KEY);
+  if(!gistId)return;
   try{
-    const res=await fetch(`${JSONBIN_BASE}/b/${binId}/latest`,{headers:{'X-Master-Key':JSONBIN_MASTER_KEY,'X-Access-Key':JSONBIN_ACCESS_KEY}});
-    if(!res.ok)return;
-    const remote=(await res.json()).record;
+    const res=await gistRequest('GET','/gists/'+gistId);
+    const remoteContent=res.files[GIST_FILE]&&res.files[GIST_FILE].content;
+    if(!remoteContent)return;
+    const remote=JSON.parse(remoteContent);
     const remoteTime=remote.syncedAt?new Date(remote.syncedAt):new Date(0);
     const localTime=new Date(localStorage.getItem('mdash_last_sync')||0);
-    if(remoteTime>localTime){applyPayload(remote);localStorage.setItem('mdash_last_sync',remoteTime.toISOString());setSyncStatus('✓ Updated!','#34d399');setTimeout(resetSyncBtn,2500);}
-  }catch(e){}
+    if(remoteTime>localTime){
+      applyPayload(remote);
+      localStorage.setItem('mdash_last_sync',remoteTime.toISOString());
+      setSyncStatus('✓ Updated!','#34d399');
+      setTimeout(resetSyncBtn,2500);
+    }
+  }catch(e){console.warn('Auto-sync failed:',e);}
 }
 
 setHeaderDate();renderLegend();populateCatSelects();
